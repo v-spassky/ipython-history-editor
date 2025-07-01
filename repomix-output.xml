@@ -1,0 +1,678 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.github/
+  ci.yml
+src/
+  extension.ts
+  historyWebview.html
+  historyWebview.ts
+.gitignore
+.prettierrc
+.vscodeignore
+eslint.config.mjs
+package.json
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".github/ci.yml">
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        run: npm install
+      - name: Lint
+        run: npm run lint
+</file>
+
+<file path="src/extension.ts">
+import * as vscode from 'vscode'
+import { openHistoryWebview } from './historyWebview'
+
+export function activate(context: vscode.ExtensionContext) {
+    const openHistoryEditorDisposable = vscode.commands.registerCommand(
+        'ipython-history-editor.openHistoryEditor',
+        () => {
+            openHistoryWebview(context)
+        },
+    )
+    context.subscriptions.push(openHistoryEditorDisposable)
+}
+
+export function deactivate() {}
+</file>
+
+<file path="src/historyWebview.html">
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>IPython History Editor</title>
+        <style>
+            body {
+                background-color: var(--vscode-editor-background);
+                color: var(--vscode-editor-foreground);
+                font-family: var(--vscode-font-family);
+                padding: 16px;
+            }
+
+            .controls {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 16px;
+                flex-wrap: wrap;
+            }
+
+            .controls label {
+                font-size: 13px;
+                font-weight: 500;
+            }
+
+            select {
+                background-color: var(--vscode-dropdown-background);
+                color: var(--vscode-dropdown-foreground);
+                border: 1px solid var(--vscode-dropdown-border);
+                padding: 4px 8px;
+                border-radius: 2px;
+                font-size: 13px;
+            }
+
+            select:focus {
+                outline: 1px solid var(--vscode-focusBorder);
+                outline-offset: -1px;
+            }
+
+            .pagination {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 16px;
+                flex-wrap: wrap;
+            }
+
+            .pagination-info {
+                font-size: 13px;
+                color: var(--vscode-descriptionForeground);
+                margin-right: 16px;
+            }
+
+            table {
+                border-collapse: collapse;
+                width: 100%;
+            }
+
+            th,
+            td {
+                border: 1px solid var(--vscode-panel-border);
+                padding: 8px;
+            }
+
+            th {
+                background-color: var(--vscode-editor-lineHighlightBackground);
+                color: var(--vscode-editor-foreground);
+                font-weight: 600;
+            }
+
+            tr:hover {
+                background-color: var(--vscode-list-hoverBackground);
+            }
+
+            .source-cell {
+                white-space: pre-wrap;
+                font-family: var(--vscode-editor-font-family);
+                max-width: 500px;
+                word-wrap: break-word;
+                background-color: var(--vscode-textCodeBlock-background);
+            }
+
+            button {
+                background-color: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+                border: none;
+                padding: 6px 12px;
+                cursor: pointer;
+                border-radius: 2px;
+                font-size: 13px;
+            }
+
+            button:hover:not(:disabled) {
+                background-color: var(--vscode-button-hoverBackground);
+            }
+
+            button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .secondary-button {
+                background-color: var(--vscode-button-secondaryBackground);
+                color: var(--vscode-button-secondaryForeground);
+            }
+
+            .secondary-button:hover:not(:disabled) {
+                background-color: var(--vscode-button-secondaryHoverBackground);
+            }
+
+            h1 {
+                color: var(--vscode-editor-foreground);
+                margin-bottom: 20px;
+                font-size: 20px;
+            }
+
+            .loading {
+                text-align: center;
+                padding: 20px;
+                color: var(--vscode-descriptionForeground);
+            }
+        </style>
+    </head>
+
+    <body>
+        <div id="app">
+            <div class="controls">
+                <button id="refreshBtn">Refresh</button>
+                <label for="pageSizeSelect">Page Size:</label>
+                <select id="pageSizeSelect">
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+
+            <div class="pagination" id="paginationControls" style="display: none">
+                <button id="firstBtn" class="secondary-button">First</button>
+                <button id="prevBtn" class="secondary-button">Previous</button>
+                <button id="nextBtn" class="secondary-button">Next</button>
+                <button id="lastBtn" class="secondary-button">Last</button>
+                <div class="pagination-info" id="paginationInfo"></div>
+            </div>
+
+            <div id="loading" class="loading" style="display: none">Loading...</div>
+
+            <table id="historyTable">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <script>
+            const vscode = acquireVsCodeApi()
+
+            let currentState = {
+                page: 1,
+                pageSize: 25,
+                totalPages: 0,
+                totalCount: 0,
+                loading: false,
+            }
+
+            const refreshBtn = document.getElementById('refreshBtn')
+            const pageSizeSelect = document.getElementById('pageSizeSelect')
+            const paginationControls = document.getElementById('paginationControls')
+            const paginationInfo = document.getElementById('paginationInfo')
+            const firstBtn = document.getElementById('firstBtn')
+            const prevBtn = document.getElementById('prevBtn')
+            const nextBtn = document.getElementById('nextBtn')
+            const lastBtn = document.getElementById('lastBtn')
+            const loading = document.getElementById('loading')
+            const historyTable = document.getElementById('historyTable')
+
+            function showLoading() {
+                currentState.loading = true
+                loading.style.display = 'block'
+                historyTable.style.opacity = '0.5'
+                refreshBtn.disabled = true
+            }
+
+            function hideLoading() {
+                currentState.loading = false
+                loading.style.display = 'none'
+                historyTable.style.opacity = '1'
+                refreshBtn.disabled = false
+            }
+
+            function updatePaginationControls() {
+                if (currentState.totalPages <= 1) {
+                    paginationControls.style.display = 'none'
+                    return
+                }
+
+                paginationControls.style.display = 'flex'
+
+                const start = (currentState.page - 1) * currentState.pageSize + 1
+                const end = Math.min(currentState.page * currentState.pageSize, currentState.totalCount)
+                paginationInfo.textContent = `Showing ${start}-${end} of ${currentState.totalCount} commands:`
+
+                firstBtn.disabled = currentState.page === 1
+                prevBtn.disabled = currentState.page === 1
+                nextBtn.disabled = currentState.page === currentState.totalPages
+                lastBtn.disabled = currentState.page === currentState.totalPages
+            }
+
+            function loadHistory() {
+                showLoading()
+                vscode.postMessage({
+                    command: 'getHistory',
+                    page: currentState.page,
+                    pageSize: currentState.pageSize,
+                })
+            }
+
+            refreshBtn.onclick = () => {
+                currentState.page = 1
+                loadHistory()
+            }
+
+            pageSizeSelect.onchange = (e) => {
+                currentState.pageSize = parseInt(e.target.value)
+                currentState.page = 1
+                loadHistory()
+            }
+
+            firstBtn.onclick = () => {
+                currentState.page = 1
+                loadHistory()
+            }
+
+            prevBtn.onclick = () => {
+                if (currentState.page > 1) {
+                    currentState.page--
+                    loadHistory()
+                }
+            }
+
+            nextBtn.onclick = () => {
+                if (currentState.page < currentState.totalPages) {
+                    currentState.page++
+                    loadHistory()
+                }
+            }
+
+            lastBtn.onclick = () => {
+                currentState.page = currentState.totalPages
+                loadHistory()
+            }
+
+            window.addEventListener('message', (event) => {
+                const message = event.data
+
+                if (message.command === 'historyData') {
+                    hideLoading()
+                    const result = message.data
+
+                    currentState.totalPages = result.totalPages
+                    currentState.totalCount = result.totalCount
+                    currentState.page = result.page
+                    currentState.pageSize = result.pageSize
+
+                    const tbody = document.querySelector('#historyTable tbody')
+                    tbody.innerHTML = ''
+
+                    for (const row of result.data) {
+                        const tr = document.createElement('tr')
+                        const sourceCell = document.createElement('td')
+                        sourceCell.textContent = row.source
+                        sourceCell.className = 'source-cell'
+                        tr.appendChild(sourceCell)
+                        tbody.appendChild(tr)
+                    }
+
+                    updatePaginationControls()
+                }
+            })
+
+            loadHistory()
+        </script>
+    </body>
+</html>
+</file>
+
+<file path="src/historyWebview.ts">
+import * as vscode from 'vscode'
+import * as path from 'path'
+import * as os from 'os'
+import * as fs from 'fs'
+import * as sqlite3 from 'sqlite3'
+
+export interface Command {
+    source: string
+}
+
+export interface PaginatedResult<T> {
+    data: T[]
+    totalCount: number
+    page: number
+    pageSize: number
+    totalPages: number
+}
+
+export class IPythonREPLHistoryRepo {
+    private static readonly PAGINATED_QUERY =
+        'SELECT source FROM history ORDER BY session DESC, line DESC LIMIT ? OFFSET ?'
+    private static readonly COUNT_QUERY = 'SELECT COUNT(*) as count FROM history'
+
+    private getDbPath(): string {
+        const config = vscode.workspace.getConfiguration('ipython-history-editor')
+        const configuredPath = config.get<string>('historyDatabasePath')
+
+        if (configuredPath) {
+            return configuredPath
+        }
+
+        return path.join(os.homedir(), '.ipython', 'profile_default', 'history.sqlite')
+    }
+
+    getLastCommands(options: { number: number }): Promise<Command[]> {
+        return new Promise((resolve, reject) => {
+            const dbPath = this.getDbPath()
+            const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+                if (err) {
+                    reject(err)
+                    return
+                }
+            })
+
+            db.all(
+                'SELECT source FROM history ORDER BY session DESC, line DESC LIMIT ?',
+                [options.number],
+                (err, rows) => {
+                    db.close()
+                    if (err) {
+                        reject(err)
+                    } else {
+                        resolve(rows as Command[])
+                    }
+                },
+            )
+        })
+    }
+
+    getCommandsPaginated(options: { page: number; pageSize: number }): Promise<PaginatedResult<Command>> {
+        return new Promise((resolve, reject) => {
+            const dbPath = this.getDbPath()
+            const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
+                if (err) {
+                    reject(err)
+                    return
+                }
+            })
+
+            // First get the total count
+            db.get(IPythonREPLHistoryRepo.COUNT_QUERY, (err, countRow: any) => {
+                if (err) {
+                    db.close()
+                    reject(err)
+                    return
+                }
+
+                const totalCount = countRow.count
+                const totalPages = Math.ceil(totalCount / options.pageSize)
+                const offset = (options.page - 1) * options.pageSize
+
+                // Then get the paginated data
+                db.all(IPythonREPLHistoryRepo.PAGINATED_QUERY, [options.pageSize, offset], (err, rows) => {
+                    db.close()
+                    if (err) {
+                        reject(err)
+                    } else {
+                        resolve({
+                            data: rows as Command[],
+                            totalCount,
+                            page: options.page,
+                            pageSize: options.pageSize,
+                            totalPages,
+                        })
+                    }
+                })
+            })
+        })
+    }
+}
+
+export function openHistoryWebview(context: vscode.ExtensionContext) {
+    const panel = vscode.window.createWebviewPanel(
+        'ipythonHistoryEditor',
+        'IPython History Editor',
+        vscode.ViewColumn.One,
+        {
+            enableScripts: true,
+        },
+    )
+
+    const htmlPath = path.join(context.extensionPath, 'src', 'historyWebview.html')
+    let html = fs.readFileSync(htmlPath, 'utf8')
+
+    const defaultPageSize = 25
+    html = html.replace('pageSize: 25,', `pageSize: ${defaultPageSize},`)
+    html = html.replace('value="25" selected', (_match) => {
+        return `value="${defaultPageSize}" selected`
+    })
+    html = html.replace('value="25" selected', '')
+    html = html.replace(`value="${defaultPageSize}"`, `value="${defaultPageSize}" selected`)
+
+    panel.webview.html = html
+
+    const historyRepo = new IPythonREPLHistoryRepo()
+
+    panel.webview.onDidReceiveMessage(async (message) => {
+        switch (message.command) {
+            case 'getHistory': {
+                try {
+                    const { page, pageSize } = message
+                    const result = await historyRepo.getCommandsPaginated({ page, pageSize })
+                    panel.webview.postMessage({ command: 'historyData', data: result })
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to load IPython history: ${error}`)
+                }
+                break
+            }
+            // TODO: Add create, update, delete handlers
+        }
+    })
+}
+</file>
+
+<file path=".gitignore">
+out
+dist
+node_modules
+.vscode-test/
+*.vsix
+</file>
+
+<file path=".prettierrc">
+{
+    "singleQuote": true,
+    "printWidth": 120,
+    "proseWrap": "always",
+    "tabWidth": 4,
+    "useTabs": false,
+    "trailingComma": "all",
+    "bracketSpacing": true,
+    "semi": false
+}
+</file>
+
+<file path=".vscodeignore">
+.vscode/**
+.vscode-test/**
+src/**
+.gitignore
+.yarnrc
+vsc-extension-quickstart.md
+**/tsconfig.json
+**/eslint.config.mjs
+**/*.map
+**/*.ts
+**/.vscode-test.*
+</file>
+
+<file path="eslint.config.mjs">
+import typescriptEslint from "@typescript-eslint/eslint-plugin";
+import tsParser from "@typescript-eslint/parser";
+
+export default [{
+    files: ["**/*.ts"],
+}, {
+    plugins: {
+        "@typescript-eslint": typescriptEslint,
+    },
+
+    languageOptions: {
+        parser: tsParser,
+        ecmaVersion: 2022,
+        sourceType: "module",
+    },
+
+    rules: {
+        "@typescript-eslint/naming-convention": ["warn", {
+            selector: "import",
+            format: ["camelCase", "PascalCase"],
+        }],
+
+        curly: "warn",
+        eqeqeq: "warn",
+        "no-throw-literal": "warn",
+        semi: "off",
+    },
+}];
+</file>
+
+<file path="package.json">
+{
+    "name": "ipython-history-editor",
+    "displayName": "IPython history editor",
+    "description": "Edit your IPython REPL command history in the comfort of the VSCode UI.",
+    "version": "0.1.0",
+    "engines": {
+        "vscode": "^1.101.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "ipython-history-editor.openHistoryEditor",
+                "title": "Open IPython History Editor"
+            }
+        ],
+        "configuration": {
+            "title": "IPython History Editor",
+            "properties": {
+                "ipython-history-editor.historyDatabasePath": {
+                    "type": "string",
+                    "description": "Path to the IPython history SQLite database file. If not specified, defaults to `~/.ipython/profile_default/history.sqlite`.",
+                    "default": ""
+                }
+            }
+        }
+    },
+    "scripts": {
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "lint": "tsc --noEmit && eslint src && prettier --check src",
+        "fix": "eslint --fix src && prettier --write src",
+        "vscode:prepublish": "npm run compile"
+    },
+    "devDependencies": {
+        "@types/mocha": "^10.0.9",
+        "@types/node": "20.x",
+        "@types/vscode": "^1.101.0",
+        "@typescript-eslint/eslint-plugin": "^8.10.0",
+        "@typescript-eslint/parser": "^8.7.0",
+        "@vscode/test-cli": "^0.0.10",
+        "@vscode/test-electron": "^2.4.1",
+        "eslint": "^9.13.0",
+        "prettier": "^3.6.2",
+        "typescript": "^5.6.3"
+    },
+    "dependencies": {
+        "sqlite3": "^5.1.7"
+    }
+}
+</file>
+
+<file path="tsconfig.json">
+{
+	"compilerOptions": {
+		"module": "Node16",
+		"target": "ES2022",
+		"outDir": "out",
+		"lib": [
+			"ES2022"
+		],
+		"sourceMap": true,
+		"rootDir": "src",
+		"strict": true   /* enable all strict type-checking options */
+		/* Additional Checks */
+		// "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
+		// "noFallthroughCasesInSwitch": true, /* Report errors for fallthrough cases in switch statement. */
+		// "noUnusedParameters": true,  /* Report errors on unused parameters. */
+	}
+}
+</file>
+
+</files>

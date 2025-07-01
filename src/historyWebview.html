@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>IPython History Editor</title>
+        <style>
+            body {
+                background-color: var(--vscode-editor-background);
+                color: var(--vscode-editor-foreground);
+                font-family: var(--vscode-font-family);
+                padding: 16px;
+            }
+
+            .controls {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 16px;
+                flex-wrap: wrap;
+            }
+
+            .controls label {
+                font-size: 13px;
+                font-weight: 500;
+            }
+
+            select {
+                background-color: var(--vscode-dropdown-background);
+                color: var(--vscode-dropdown-foreground);
+                border: 1px solid var(--vscode-dropdown-border);
+                padding: 4px 8px;
+                border-radius: 2px;
+                font-size: 13px;
+            }
+
+            select:focus {
+                outline: 1px solid var(--vscode-focusBorder);
+                outline-offset: -1px;
+            }
+
+            .pagination {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 16px;
+                flex-wrap: wrap;
+            }
+
+            .pagination-info {
+                font-size: 13px;
+                color: var(--vscode-descriptionForeground);
+                margin-right: 16px;
+            }
+
+            .right-controls {
+                margin-left: auto;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            table {
+                border-collapse: collapse;
+                width: 100%;
+            }
+
+            th,
+            td {
+                border: 1px solid var(--vscode-panel-border);
+                padding: 8px;
+            }
+
+            th {
+                background-color: var(--vscode-editor-lineHighlightBackground);
+                color: var(--vscode-editor-foreground);
+                font-weight: 600;
+            }
+
+            tr:hover {
+                background-color: var(--vscode-list-hoverBackground);
+            }
+
+            .source-cell {
+                white-space: pre-wrap;
+                font-family: var(--vscode-editor-font-family);
+                max-width: 500px;
+                word-wrap: break-word;
+                background-color: var(--vscode-textCodeBlock-background);
+            }
+
+            .checkbox-cell {
+                width: 40px;
+                text-align: center;
+            }
+
+            button {
+                background-color: var(--vscode-button-background);
+                color: var(--vscode-button-foreground);
+                border: none;
+                padding: 6px 12px;
+                cursor: pointer;
+                border-radius: 2px;
+                font-size: 13px;
+            }
+
+            button:hover:not(:disabled) {
+                background-color: var(--vscode-button-hoverBackground);
+            }
+
+            button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .secondary-button {
+                background-color: var(--vscode-button-secondaryBackground);
+                color: var(--vscode-button-secondaryForeground);
+            }
+
+            .secondary-button:hover:not(:disabled) {
+                background-color: var(--vscode-button-secondaryHoverBackground);
+            }
+
+            .danger-button {
+                background-color: var(--vscode-errorForeground);
+                color: var(--vscode-editor-background);
+            }
+
+            .danger-button:hover:not(:disabled) {
+                background-color: var(--vscode-errorForeground);
+                opacity: 0.8;
+            }
+
+            h1 {
+                color: var(--vscode-editor-foreground);
+                margin-bottom: 20px;
+                font-size: 20px;
+            }
+
+            .loading {
+                text-align: center;
+                padding: 20px;
+                color: var(--vscode-descriptionForeground);
+            }
+
+            .selected-count {
+                font-size: 13px;
+                color: var(--vscode-descriptionForeground);
+                margin-left: 8px;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div id="app">
+            <div class="controls">
+                <button id="refreshBtn">Refresh</button>
+                <label for="pageSizeSelect">Page Size:</label>
+                <select id="pageSizeSelect">
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+
+            <div class="pagination" id="paginationControls" style="display: none">
+                <button id="firstBtn" class="secondary-button">First</button>
+                <button id="prevBtn" class="secondary-button">Previous</button>
+                <button id="nextBtn" class="secondary-button">Next</button>
+                <button id="lastBtn" class="secondary-button">Last</button>
+                <div class="pagination-info" id="paginationInfo"></div>
+
+                <div class="right-controls">
+                    <span class="selected-count" id="selectedCount">0 selected</span>
+                    <button id="deleteSelectedBtn" class="danger-button" disabled>Delete Selected</button>
+                </div>
+            </div>
+
+            <div id="loading" class="loading" style="display: none">Loading...</div>
+
+            <table id="historyTable">
+                <thead>
+                    <tr>
+                        <th class="checkbox-cell">
+                            <input type="checkbox" id="selectAllCheckbox" />
+                        </th>
+                        <th>Code</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <script>
+            const vscode = acquireVsCodeApi()
+
+            let currentState = {
+                page: 1,
+                pageSize: 25,
+                totalPages: 0,
+                totalCount: 0,
+                loading: false,
+                selectedItems: new Set(),
+            }
+
+            const refreshBtn = document.getElementById('refreshBtn')
+            const pageSizeSelect = document.getElementById('pageSizeSelect')
+            const paginationControls = document.getElementById('paginationControls')
+            const paginationInfo = document.getElementById('paginationInfo')
+            const firstBtn = document.getElementById('firstBtn')
+            const prevBtn = document.getElementById('prevBtn')
+            const nextBtn = document.getElementById('nextBtn')
+            const lastBtn = document.getElementById('lastBtn')
+            const loading = document.getElementById('loading')
+            const historyTable = document.getElementById('historyTable')
+            const deleteSelectedBtn = document.getElementById('deleteSelectedBtn')
+            const selectedCount = document.getElementById('selectedCount')
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox')
+
+            function showLoading() {
+                currentState.loading = true
+                loading.style.display = 'block'
+                historyTable.style.opacity = '0.5'
+                refreshBtn.disabled = true
+            }
+
+            function hideLoading() {
+                currentState.loading = false
+                loading.style.display = 'none'
+                historyTable.style.opacity = '1'
+                refreshBtn.disabled = false
+            }
+
+            function updateSelectionUI() {
+                const selectedSize = currentState.selectedItems.size
+                selectedCount.textContent = `${selectedSize} selected`
+                deleteSelectedBtn.disabled = selectedSize === 0
+
+                const visibleCheckboxes = document.querySelectorAll('tbody input[type="checkbox"]')
+                const checkedVisibleBoxes = document.querySelectorAll('tbody input[type="checkbox"]:checked')
+
+                if (visibleCheckboxes.length === 0) {
+                    selectAllCheckbox.indeterminate = false
+                    selectAllCheckbox.checked = false
+                } else if (checkedVisibleBoxes.length === visibleCheckboxes.length) {
+                    selectAllCheckbox.indeterminate = false
+                    selectAllCheckbox.checked = true
+                } else if (checkedVisibleBoxes.length > 0) {
+                    selectAllCheckbox.indeterminate = true
+                    selectAllCheckbox.checked = false
+                } else {
+                    selectAllCheckbox.indeterminate = false
+                    selectAllCheckbox.checked = false
+                }
+            }
+
+            function updatePaginationControls() {
+                if (currentState.totalPages <= 1) {
+                    paginationControls.style.display = 'none'
+                    return
+                }
+
+                paginationControls.style.display = 'flex'
+
+                const start = (currentState.page - 1) * currentState.pageSize + 1
+                const end = Math.min(currentState.page * currentState.pageSize, currentState.totalCount)
+                paginationInfo.textContent = `Showing ${start}-${end} of ${currentState.totalCount} commands:`
+
+                firstBtn.disabled = currentState.page === 1
+                prevBtn.disabled = currentState.page === 1
+                nextBtn.disabled = currentState.page === currentState.totalPages
+                lastBtn.disabled = currentState.page === currentState.totalPages
+            }
+
+            function loadHistory() {
+                showLoading()
+                vscode.postMessage({
+                    command: 'getHistory',
+                    page: currentState.page,
+                    pageSize: currentState.pageSize,
+                })
+            }
+
+            refreshBtn.onclick = () => {
+                currentState.page = 1
+                currentState.selectedItems.clear()
+                loadHistory()
+            }
+
+            pageSizeSelect.onchange = (e) => {
+                currentState.pageSize = parseInt(e.target.value)
+                currentState.page = 1
+                currentState.selectedItems.clear()
+                loadHistory()
+            }
+
+            firstBtn.onclick = () => {
+                currentState.page = 1
+                loadHistory()
+            }
+
+            prevBtn.onclick = () => {
+                if (currentState.page > 1) {
+                    currentState.page--
+                    loadHistory()
+                }
+            }
+
+            nextBtn.onclick = () => {
+                if (currentState.page < currentState.totalPages) {
+                    currentState.page++
+                    loadHistory()
+                }
+            }
+
+            lastBtn.onclick = () => {
+                currentState.page = currentState.totalPages
+                loadHistory()
+            }
+
+            selectAllCheckbox.onchange = () => {
+                const checkboxes = document.querySelectorAll('tbody input[type="checkbox"]')
+                checkboxes.forEach((checkbox) => {
+                    checkbox.checked = selectAllCheckbox.checked
+                    if (selectAllCheckbox.checked) {
+                        currentState.selectedItems.add(checkbox.dataset.id)
+                    } else {
+                        currentState.selectedItems.delete(checkbox.dataset.id)
+                    }
+                })
+                updateSelectionUI()
+            }
+
+            deleteSelectedBtn.onclick = () => {
+                if (currentState.selectedItems.size === 0) return
+                showLoading()
+                vscode.postMessage({
+                    command: 'deleteItems',
+                    ids: Array.from(currentState.selectedItems),
+                })
+            }
+
+            window.addEventListener('message', (event) => {
+                const message = event.data
+
+                if (message.command === 'historyData') {
+                    hideLoading()
+                    const result = message.data
+
+                    currentState.totalPages = result.totalPages
+                    currentState.totalCount = result.totalCount
+                    currentState.page = result.page
+                    currentState.pageSize = result.pageSize
+
+                    const tbody = document.querySelector('#historyTable tbody')
+                    tbody.innerHTML = ''
+
+                    for (const row of result.data) {
+                        const tr = document.createElement('tr')
+
+                        const checkboxCell = document.createElement('td')
+                        checkboxCell.className = 'checkbox-cell'
+                        const checkbox = document.createElement('input')
+                        checkbox.type = 'checkbox'
+                        checkbox.dataset.id = row.id
+                        checkbox.checked = currentState.selectedItems.has(row.id.toString())
+                        checkbox.onchange = () => {
+                            if (checkbox.checked) {
+                                currentState.selectedItems.add(checkbox.dataset.id)
+                            } else {
+                                currentState.selectedItems.delete(checkbox.dataset.id)
+                            }
+                            updateSelectionUI()
+                        }
+                        checkboxCell.appendChild(checkbox)
+                        tr.appendChild(checkboxCell)
+
+                        const sourceCell = document.createElement('td')
+                        sourceCell.textContent = row.source
+                        sourceCell.className = 'source-cell'
+                        tr.appendChild(sourceCell)
+
+                        tbody.appendChild(tr)
+                    }
+
+                    updatePaginationControls()
+                    updateSelectionUI()
+                } else if (message.command === 'deleteComplete') {
+                    hideLoading()
+                    currentState.selectedItems.clear()
+                    loadHistory()
+                }
+            })
+
+            loadHistory()
+        </script>
+    </body>
+</html>
