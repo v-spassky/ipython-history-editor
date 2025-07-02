@@ -25,7 +25,11 @@ export class IPythonREPLHistoryRepo {
 
     private getDbPath(): string {
         const config = vscode.workspace.getConfiguration('ipython-history-editor')
-        const configuredPath = config.get<string>('historyDatabasePath')
+        let configuredPath = config.get<string>('historyDatabasePath')
+
+        if (configuredPath && configuredPath.startsWith('~')) {
+            configuredPath = path.join(os.homedir(), configuredPath.slice(1))
+        }
 
         if (configuredPath) {
             return configuredPath

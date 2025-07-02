@@ -23,8 +23,8 @@
             "properties": {
                 "ipython-history-editor.historyDatabasePath": {
                     "type": "string",
-                    "description": "Path to the IPython history SQLite database file. If not specified, defaults to `~/.ipython/profile_default/history.sqlite`.",
-                    "default": ""
+                    "description": "Path to the IPython history SQLite database file.",
+                    "default": "~/.ipython/profile_default/history.sqlite"
                 }
             }
         }
