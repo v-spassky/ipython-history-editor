@@ -25,6 +25,27 @@
                 font-weight: 500;
             }
 
+            .search-container {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            input[type='text'] {
+                background-color: var(--vscode-input-background);
+                color: var(--vscode-input-foreground);
+                border: 1px solid var(--vscode-input-border);
+                padding: 4px 8px;
+                border-radius: 2px;
+                font-size: 13px;
+                min-width: 200px;
+            }
+
+            input[type='text']:focus {
+                outline: 1px solid var(--vscode-focusBorder);
+                outline-offset: -1px;
+            }
+
             select {
                 background-color: var(--vscode-dropdown-background);
                 color: var(--vscode-dropdown-foreground);
@@ -149,6 +170,13 @@
                 color: var(--vscode-descriptionForeground);
                 margin-left: 8px;
             }
+
+            .search-info {
+                font-size: 13px;
+                color: var(--vscode-descriptionForeground);
+                margin-left: 8px;
+                font-style: italic;
+            }
         </style>
     </head>
 
@@ -156,6 +184,14 @@
         <div id="app">
             <div class="controls">
                 <button id="refreshBtn">Refresh</button>
+
+                <div class="search-container">
+                    <label for="searchInput">Search:</label>
+                    <input type="text" id="searchInput" placeholder="Search commands..." />
+                    <button id="searchBtn">Search</button>
+                    <button id="clearSearchBtn" class="secondary-button" style="display: none">Clear</button>
+                </div>
+
                 <label for="pageSizeSelect">Page Size:</label>
                 <select id="pageSizeSelect">
                     <option value="10">10</option>
@@ -203,9 +239,13 @@
                 totalCount: 0,
                 loading: false,
                 selectedItems: new Set(),
+                searchTerm: '',
             }
 
             const refreshBtn = document.getElementById('refreshBtn')
+            const searchInput = document.getElementById('searchInput')
+            const searchBtn = document.getElementById('searchBtn')
+            const clearSearchBtn = document.getElementById('clearSearchBtn')
             const pageSizeSelect = document.getElementById('pageSizeSelect')
             const paginationControls = document.getElementById('paginationControls')
             const paginationInfo = document.getElementById('paginationInfo')
@@ -224,6 +264,7 @@
                 loading.style.display = 'block'
                 historyTable.style.opacity = '0.5'
                 refreshBtn.disabled = true
+                searchBtn.disabled = true
             }
 
             function hideLoading() {
@@ -231,6 +272,15 @@
                 loading.style.display = 'none'
                 historyTable.style.opacity = '1'
                 refreshBtn.disabled = false
+                searchBtn.disabled = false
+            }
+
+            function updateSearchUI() {
+                if (currentState.searchTerm) {
+                    clearSearchBtn.style.display = 'inline-block'
+                } else {
+                    clearSearchBtn.style.display = 'none'
+                }
             }
 
             function updateSelectionUI() {
@@ -257,16 +307,12 @@
             }
 
             function updatePaginationControls() {
-                if (currentState.totalPages <= 1) {
-                    paginationControls.style.display = 'none'
-                    return
-                }
-
                 paginationControls.style.display = 'flex'
 
                 const start = (currentState.page - 1) * currentState.pageSize + 1
                 const end = Math.min(currentState.page * currentState.pageSize, currentState.totalCount)
-                paginationInfo.textContent = `Showing ${start}-${end} of ${currentState.totalCount} commands:`
+                const searchText = currentState.searchTerm ? ` (filtered by "${currentState.searchTerm}")` : ''
+                paginationInfo.textContent = `Showing ${start}-${end} of ${currentState.totalCount} commands${searchText}`
 
                 firstBtn.disabled = currentState.page === 1
                 prevBtn.disabled = currentState.page === 1
@@ -280,13 +326,41 @@
                     command: 'getHistory',
                     page: currentState.page,
                     pageSize: currentState.pageSize,
+                    searchTerm: currentState.searchTerm,
                 })
+            }
+
+            function performSearch() {
+                currentState.searchTerm = searchInput.value.trim()
+                currentState.page = 1
+                currentState.selectedItems.clear()
+                updateSearchUI()
+                loadHistory()
+            }
+
+            function clearSearch() {
+                searchInput.value = ''
+                currentState.searchTerm = ''
+                currentState.page = 1
+                currentState.selectedItems.clear()
+                updateSearchUI()
+                loadHistory()
             }
 
             refreshBtn.onclick = () => {
                 currentState.page = 1
                 currentState.selectedItems.clear()
                 loadHistory()
+            }
+
+            searchBtn.onclick = performSearch
+
+            clearSearchBtn.onclick = clearSearch
+
+            searchInput.onkeypress = (e) => {
+                if (e.key === 'Enter') {
+                    performSearch()
+                }
             }
 
             pageSizeSelect.onchange = (e) => {
@@ -387,6 +461,7 @@
 
                     updatePaginationControls()
                     updateSelectionUI()
+                    updateSearchUI()
                 } else if (message.command === 'deleteComplete') {
                     hideLoading()
                     currentState.selectedItems.clear()

@@ -20,7 +20,10 @@ export interface PaginatedResult<T> {
 export class IPythonREPLHistoryRepo {
     private static readonly PAGINATED_QUERY =
         'SELECT rowid as id, source FROM history ORDER BY session DESC, line DESC LIMIT ? OFFSET ?'
+    private static readonly SEARCH_PAGINATED_QUERY =
+        'SELECT rowid as id, source FROM history WHERE source LIKE ? ORDER BY session DESC, line DESC LIMIT ? OFFSET ?'
     private static readonly COUNT_QUERY = 'SELECT COUNT(*) as count FROM history'
+    private static readonly SEARCH_COUNT_QUERY = 'SELECT COUNT(*) as count FROM history WHERE source LIKE ?'
     private static readonly DELETE_QUERY_TEMPLATE = 'DELETE FROM history WHERE rowid IN (%IDS%)'
 
     private getDbPath(): string {
@@ -38,7 +41,7 @@ export class IPythonREPLHistoryRepo {
         return path.join(os.homedir(), '.ipython', 'profile_default', 'history.sqlite')
     }
 
-    getCommands(options: { page: number; pageSize: number }): Promise<PaginatedResult<Command>> {
+    getCommands(options: { page: number; pageSize: number; searchTerm?: string }): Promise<PaginatedResult<Command>> {
         return new Promise((resolve, reject) => {
             const dbPath = this.getDbPath()
             const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READWRITE, (err) => {
@@ -48,7 +51,17 @@ export class IPythonREPLHistoryRepo {
                 }
             })
 
-            db.get(IPythonREPLHistoryRepo.COUNT_QUERY, (err, countRow: any) => {
+            const hasSearch = options.searchTerm && options.searchTerm.trim().length > 0
+            const countQuery = hasSearch
+                ? IPythonREPLHistoryRepo.SEARCH_COUNT_QUERY
+                : IPythonREPLHistoryRepo.COUNT_QUERY
+            const dataQuery = hasSearch
+                ? IPythonREPLHistoryRepo.SEARCH_PAGINATED_QUERY
+                : IPythonREPLHistoryRepo.PAGINATED_QUERY
+
+            const countParams = hasSearch ? [`%${options.searchTerm}%`] : []
+
+            db.get(countQuery, countParams, (err, countRow: any) => {
                 if (err) {
                     db.close()
                     reject(err)
@@ -59,7 +72,11 @@ export class IPythonREPLHistoryRepo {
                 const totalPages = Math.ceil(totalCount / options.pageSize)
                 const offset = (options.page - 1) * options.pageSize
 
-                db.all(IPythonREPLHistoryRepo.PAGINATED_QUERY, [options.pageSize, offset], (err, rows) => {
+                const dataParams = hasSearch
+                    ? [`%${options.searchTerm}%`, options.pageSize, offset]
+                    : [options.pageSize, offset]
+
+                db.all(dataQuery, dataParams, (err, rows) => {
                     db.close()
                     if (err) {
                         reject(err)
@@ -136,8 +153,8 @@ export function openHistoryWebview(context: vscode.ExtensionContext) {
         switch (message.command) {
             case 'getHistory': {
                 try {
-                    const { page, pageSize } = message
-                    const result = await historyRepo.getCommands({ page, pageSize })
+                    const { page, pageSize, searchTerm } = message
+                    const result = await historyRepo.getCommands({ page, pageSize, searchTerm })
                     panel.webview.postMessage({ command: 'historyData', data: result })
                 } catch (error) {
                     vscode.window.showErrorMessage(`Failed to load IPython history: ${error}`)
