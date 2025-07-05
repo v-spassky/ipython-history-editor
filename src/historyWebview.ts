@@ -136,15 +136,6 @@ export function openHistoryWebview(context: vscode.ExtensionContext) {
 
     const htmlPath = path.join(context.extensionPath, 'src', 'historyWebview.html')
     let html = fs.readFileSync(htmlPath, 'utf8')
-
-    const defaultPageSize = 25
-    html = html.replace('pageSize: 25,', `pageSize: ${defaultPageSize},`)
-    html = html.replace('value="25" selected', (_match) => {
-        return `value="${defaultPageSize}" selected`
-    })
-    html = html.replace('value="25" selected', '')
-    html = html.replace(`value="${defaultPageSize}"`, `value="${defaultPageSize}" selected`)
-
     panel.webview.html = html
 
     const historyRepo = new IPythonREPLHistoryRepo()
