@@ -2,7 +2,7 @@
     "name": "ipython-history-editor",
     "displayName": "IPython history editor",
     "description": "Edit your IPython REPL command history in the comfort of the VSCode UI.",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "engines": {
         "vscode": "^1.80.0"
     },
